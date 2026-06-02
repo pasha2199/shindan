@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>銀河画像 3Dビューア 背景調整 安定版</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #05070c;
+      color: #eef3ff;
+      font-family: sans-serif;
+    }
+
+    #app {
+      display: flex;
+      height: 100%;
+    }
+
+    #viewer {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #05070c;
+      perspective: 1800px;
+      perspective-origin: center center;
+    }
+
+    /* 背景グラデーション */
+    #bgLayer {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at center, #0d1527 0%, #070b14 45%, #020305 100%);
+      will-change: filter;
+    }
+
+    /* 3Dワールド */
+    #world {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 0;
+      height: 0;
+      transform-style: preserve-3d;
+      transform-origin: center center;
+      will-change: transform;
+      z-index: 2;
+    }
+
+    /* 背景星: world の中で一緒に回る */
+    #starField {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      transform-style: preserve-3d;
+      pointer-events: none;
+    }
+
+    .bg-star {
+      position: absolute;
+      left: 0;
+      top: 0;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 0 8px rgba(255,255,255,0.65);
+      pointer-events: none;
+      transform-style: preserve-3d;
+    }
+
+    /* 画像は1枚だけ */
+    #imageGroup {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      transform-style: preserve-3d;
+      pointer-events: none;
+    }
+
+    #mainImg {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform-origin: center center;
+      max-width: none;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: none;
+      display: none;
+      box-shadow:
+        0 0 28px rgba(255,255,255,0.06),
+        0 0 90px rgba(120,170,255,0.05);
+    }
+
+    /* 操作面 */
+    #interaction {
+      position: absolute;
+      inset: 0;
+      z-index: 30;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    #interaction.dragging {
+      cursor: grabbing;
+    }
+
+    /* 左上表示 */
+    #overlay {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      z-index: 40;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.35);
+      color: #dfe8ff;
+      font-size: 12px;
+      line-height: 1.6;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+      max-width: 400px;
+    }
+
+    /* 右パネル */
+    #panel {
+      width: 440px;
+      background: #121826;
+      border-left: 1px solid #293449;
+      padding: 16px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: auto;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .sub {
+      font-size: 12px;
+      color: #9eb0d4;
+      line-height: 1.6;
+      margin-top: 6px;
+    }
+
+    .group {
+      background: #161f2f;
+      border: 1px solid #28364b;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .groupTitle {
+      font-size: 13px;
+      font-weight: bold;
+      color: #dce6ff;
+      margin-bottom: 10px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: #d7e3ff;
+      margin: 8px 0 4px 0;
+    }
+
+    input[type="file"],
+    input[type="range"] {
+      width: 100%;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #2b3953;
+      color: white;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    button:hover {
+      background: #384a6a;
+    }
+
+    .value {
+      float: right;
+      color: #8fd0ff;
+      font-family: monospace;
+    }
+
+    .badge {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #1c2638;
+      color: #bfd0f0;
+      font-size: 11px;
+    }
+
+    .status {
+      font-size: 12px;
+      line-height: 1.6;
+      color: #bcd0f3;
+      background: rgba(255,255,255,0.04);
+      border-radius: 8px;
+      padding: 8px;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="viewer">
+      <div id="bgLayer"></div>
+
+      <div id="world">
+        <div id="starField"></div>
+
+        <div id="imageGroup">
+          <img id="mainImg" alt="astronomy image">
+        </div>
+      </div>
+
+      <div id="interaction"></div>
+
+      <div id="overlay">
+        <div>🖱️ ドラッグ: 回転</div>
+        <div>🎯 ホイール: 拡大縮小</div>
+        <div>🌌 背景星は world の回転にだけ追従します</div>
+        <div>🎨 背景だけ色相・明度・彩度調整可能</div>
+        <div id="miniStatus">待機中</div>
+      </div>
+    </div>
+
+    <aside id="panel">
+      <div>
+        <h1>🌌 銀河画像 3Dビューア</h1>
+        <div class="sub">
+          背景星は「前の自然な動き方」に戻しつつ、背景色相・背景明度・背景彩度を調整できる版です。
+        </div>
+        <div class="badge" id="fileNameBadge">サンプル画像</div>
+      </div>
+
+      <div class="group">
+        <div class="groupTitle">📁 画像入力</div>
+        <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/*">
+      </div>
+
+      <div class="group">
+        <div class="groupTitle">🧭 視点</div>
+        <div class="row">
+          <button id="faceBtn">フェイスオン</button>
+          <button id="diagBtn">斜め</button>
+          <button id="edgeBtn">エッジオン</button>
+          <button id="resetBtn">リセット</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="groupTitle">🎨 画像の見え方</div>
+
+        <label>
+          明るさ
+          <span class="value" id="brightnessVal">1.20</span>
+        </label>
+        <input id="brightness" type="range" min="0.50" max="3.00" step="0.05" value="1.20" />
+
+        <label>
+          コントラスト
+          <span class="value" id="contrastVal">1.30</span>
+        </label>
+        <input id="contrast" type="range" min="0.50" max="3.00" step="0.05" value="1.30" />
+
+        <label>
+          彩度
+          <span class="value" id="saturateVal">1.10</span>
+        </label>
+        <input id="saturate" type="range" min="0.00" max="3.00" step="0.05" value="1.10" />
+      </div>
+
+      <div class="group">
+        <div class="groupTitle">🌌 背景の見え方</div>
+
+        <label>
+          背景色相
+          <span class="value" id="bgHueVal">0°</span>
+        </label>
+        <input id="bgHue" type="range" min="-180" max="180" step="1" value="0" />
+
+        <label>
+          背景明度
+          <span class="value" id="bgBrightnessVal">1.00</span>
+        </label>
+        <input id="bgBrightness" type="range" min="0.30" max="2.50" step="0.05" value="1.00" />
+
+        <label>
+          背景彩度
+          <span class="value" id="bgSaturateVal">1.00</span>
+        </label>
+        <input id="bgSaturate" type="range" min="0.00" max="3.00" step="0.05" value="1.00" />
+      </div>
+
+      <div class="group">
+        <div class="groupTitle">🪐 3Dっぽさ</div>
+
+        <label>
+          傾きの強さ
+          <span class="value" id="tiltStrengthVal">1.00</span>
+        </label>
+        <input id="tiltStrength" type="range" min="0.20" max="2.50" step="0.05" value="1.00" />
+
+        <label>
+          フェイスオン補正
+          <span class="value" id="faceRoundnessVal">1.75</span>
+        </label>
+        <input id="faceRoundness" type="range" min="1.00" max="3.00" step="0.01" value="1.75" />
+
+        <label>
+          拡大率
+          <span class="value" id="zoomVal">1.00</span>
+        </label>
+        <input id="zoom" type="range" min="0.30" max="2.50" step="0.01" value="1.00" />
+      </div>
+
+      <div class="group">
+        <div class="groupTitle">⭐ 背景星</div>
+
+        <label>
+          星の数
+          <span class="value" id="starCountVal">2000</span>
+        </label>
+        <input id="starCount" type="range" min="1000" max="3000" step="20" value="2000" />
+
+        <label>
+          星の奥行き
+          <span class="value" id="starDepthVal">120</span>
+        </label>
+        <input id="starDepth" type="range" min="0" max="800" step="10" value="120" />
+      </div>
+
+      <div class="group">
+        <div class="groupTitle">🔍 状態</div>
+        <div id="statusBox" class="status">待機中</div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const MAX_EDGE_ANGLE = 85;
+
+    const state = {
+      rotX: 0,
+      rotY: 0,
+      dragging: false,
+      pointerId: null,
+      lastX: 0,
+      lastY: 0,
+      width: 800,
+      height: 560,
+      loaded: false
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const interaction = $('interaction');
+    const world = $('world');
+    const starField = $('starField');
+    const bgLayer = $('bgLayer');
+    const mainImg = $('mainImg');
+
+    const fileInput = $('fileInput');
+    const faceBtn = $('faceBtn');
+    const diagBtn = $('diagBtn');
+    const edgeBtn = $('edgeBtn');
+    const resetBtn = $('resetBtn');
+
+    const brightnessEl = $('brightness');
+    const contrastEl = $('contrast');
+    const saturateEl = $('saturate');
+    const bgHueEl = $('bgHue');
+    const bgBrightnessEl = $('bgBrightness');
+    const bgSaturateEl = $('bgSaturate');
+
+    const tiltStrengthEl = $('tiltStrength');
+    const faceRoundnessEl = $('faceRoundness');
+    const zoomEl = $('zoom');
+
+    const starCountEl = $('starCount');
+    const starDepthEl = $('starDepth');
+
+    const statusBox = $('statusBox');
+    const miniStatus = $('miniStatus');
+    const fileNameBadge = $('fileNameBadge');
+
+    function setStatus(text) {
+      statusBox.textContent = text;
+      miniStatus.textContent = text.split('\n')[0];
+    }
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function rand(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function clampViewAngles() {
+      state.rotX = clamp(state.rotX, -MAX_EDGE_ANGLE, MAX_EDGE_ANGLE);
+
+      const cosMax = Math.cos(MAX_EDGE_ANGLE * Math.PI / 180);
+      const cosX = Math.abs(Math.cos(state.rotX * Math.PI / 180));
+
+      if (cosX <= cosMax + 1e-6) {
+        state.rotY = 0;
+        return;
+      }
+
+      const maxYawRad = Math.acos(cosMax / cosX);
+      const maxYawDeg = maxYawRad * 180 / Math.PI;
+      state.rotY = clamp(state.rotY, -maxYawDeg, maxYawDeg);
+    }
+
+    function updateLabels() {
+      $('brightnessVal').textContent = Number(brightnessEl.value).toFixed(2);
+      $('contrastVal').textContent = Number(contrastEl.value).toFixed(2);
+      $('saturateVal').textContent = Number(saturateEl.value).toFixed(2);
+
+      $('bgHueVal').textContent = `${Number(bgHueEl.value)}°`;
+      $('bgBrightnessVal').textContent = Number(bgBrightnessEl.value).toFixed(2);
+      $('bgSaturateVal').textContent = Number(bgSaturateEl.value).toFixed(2);
+
+      $('tiltStrengthVal').textContent = Number(tiltStrengthEl.value).toFixed(2);
+      $('faceRoundnessVal').textContent = Number(faceRoundnessEl.value).toFixed(2);
+      $('zoomVal').textContent = Number(zoomEl.value).toFixed(2);
+
+      $('starCountVal').textContent = Number(starCountEl.value);
+      $('starDepthVal').textContent = Number(starDepthEl.value);
+    }
+
+    function buildStars() {
+      starField.innerHTML = '';
+
+      const count = Number(starCountEl.value);
+      const depth = Number(starDepthEl.value);
+
+      for (let i = 0; i < count; i++) {
+        const s = document.createElement('div');
+        s.className = 'bg-star';
+
+        const size = Math.random() * 2.4 + 0.4;
+        const x = rand(-1000, 1000);
+        const y = rand(-700, 700);
+        const z = rand(-depth, depth);
+
+        s.style.width = `${size}px`;
+        s.style.height = `${size}px`;
+        s.style.opacity = `${0.18 + Math.random() * 0.75}`;
+        s.style.transform = `translate3d(${x}px, ${y}px, ${z}px)`;
+        starField.appendChild(s);
+      }
+    }
+
+    function fitImage() {
+      const viewer = $('viewer');
+      const maxW = viewer.clientWidth * 0.72;
+      const maxH = viewer.clientHeight * 0.72;
+      const scale = Math.min(maxW / state.width, maxH / state.height);
+
+      const w = state.width * scale;
+      const h = state.height * scale;
+
+      mainImg.style.width = `${w}px`;
+      mainImg.style.height = `${h}px`;
+      mainImg.style.display = 'block';
+    }
+
+    function applyImageFilters() {
+      const b = Number(brightnessEl.value);
+      const c = Number(contrastEl.value);
+      const s = Number(saturateEl.value);
+      const h = Number(bgHueEl.value);
+      const bb = Number(bgBrightnessEl.value);
+      const bs = Number(bgSaturateEl.value);
+
+      // 画像本体
+      mainImg.style.filter = `
+        brightness(${b})
+        contrast(${c})
+        saturate(${s})
+      `;
+
+      // 背景だけ
+      bgLayer.style.filter = `
+        hue-rotate(${h}deg)
+        brightness(${bb})
+        saturate(${bs})
+      `;
+    }
+
+    function updateTransform() {
+      const tilt = Number(tiltStrengthEl.value);
+      const zoom = Number(zoomEl.value);
+      const faceRound = Number(faceRoundnessEl.value);
+
+      const rx = state.rotX * tilt;
+      const ry = state.rotY * tilt;
+
+      const edgeFactor = Math.min(1, Math.abs(state.rotX) / MAX_EDGE_ANGLE);
+      const faceFactor = 1 - edgeFactor;
+      const roundScaleY = 1.0 + (faceRound - 1.0) * faceFactor * 2.2;
+
+      world.style.transform = `
+        translate(-50%, -50%)
+        scale(${zoom})
+        rotateX(${rx}deg)
+        rotateY(${ry}deg)
+      `;
+
+      mainImg.style.transform = `translate(-50%, -50%) scale(1.00, ${roundScaleY})`;
+    }
+
+    function loadImage(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          state.width = img.naturalWidth;
+          state.height = img.naturalHeight;
+          state.loaded = true;
+          fileNameBadge.textContent = file.name;
+          mainImg.src = e.target.result;
+          fitImage();
+          applyImageFilters();
+          updateTransform();
+          setStatus('画像を表示しました\n背景色相・明度・彩度 調整あり');
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function setPreset(mode) {
+      if (mode === 'face') {
+        state.rotX = 0;
+        state.rotY = 0;
+      } else if (mode === 'diag') {
+        state.rotX = -28;
+        state.rotY = 30;
+      } else if (mode === 'edge') {
+        state.rotX = -MAX_EDGE_ANGLE;
+        state.rotY = 0;
+      }
+      clampViewAngles();
+      updateTransform();
+    }
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) loadImage(file);
+    });
+
+    faceBtn.addEventListener('click', () => setPreset('face'));
+    diagBtn.addEventListener('click', () => setPreset('diag'));
+    edgeBtn.addEventListener('click', () => setPreset('edge'));
+
+    resetBtn.addEventListener('click', () => {
+      state.rotX = 0;
+      state.rotY = 0;
+      zoomEl.value = '1.00';
+      updateLabels();
+      clampViewAngles();
+      updateTransform();
+    });
+
+    [brightnessEl, contrastEl, saturateEl].forEach(el => {
+      el.addEventListener('input', () => {
+        updateLabels();
+        applyImageFilters();
+      });
+    });
+
+    [bgHueEl, bgBrightnessEl, bgSaturateEl].forEach(el => {
+      el.addEventListener('input', () => {
+        updateLabels();
+        applyImageFilters();
+      });
+    });
+
+    [tiltStrengthEl, faceRoundnessEl, zoomEl].forEach(el => {
+      el.addEventListener('input', () => {
+        updateLabels();
+        updateTransform();
+      });
+    });
+
+    [starCountEl, starDepthEl].forEach(el => {
+      el.addEventListener('input', () => {
+        updateLabels();
+        buildStars();
+      });
+    });
+
+    interaction.addEventListener('pointerdown', (e) => {
+      state.dragging = true;
+      state.pointerId = e.pointerId;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+      interaction.classList.add('dragging');
+      interaction.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+
+    interaction.addEventListener('pointermove', (e) => {
+      if (!state.dragging) return;
+      if (state.pointerId !== e.pointerId) return;
+
+      const dx = e.clientX - state.lastX;
+      const dy = e.clientY - state.lastY;
+      state.lastX = e.clientX;
+      state.lastY = e.clientY;
+
+      state.rotY += dx * 0.6;
+      state.rotX -= dy * 0.6;
+
+      clampViewAngles();
+      updateTransform();
+      e.preventDefault();
+    });
+
+    function endPointer(e) {
+      if (state.pointerId !== e.pointerId) return;
+      state.dragging = false;
+      state.pointerId = null;
+      interaction.classList.remove('dragging');
+    }
+
+    interaction.addEventListener('pointerup', endPointer);
+    interaction.addEventListener('pointercancel', endPointer);
+
+    interaction.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      let z = Number(zoomEl.value);
+      z *= e.deltaY > 0 ? 0.94 : 1.06;
+      z = clamp(z, 0.30, 2.50);
+      zoomEl.value = z.toFixed(2);
+      updateLabels();
+      updateTransform();
+    }, { passive: false });
+
+    window.addEventListener('resize', () => {
+      if (state.loaded) {
+        fitImage();
+        buildStars();
+        updateTransform();
+      }
+    });
+
+    updateLabels();
+    buildStars();
+    applyImageFilters();
+    setStatus('待機中');
+
+    // サンプル画像
+    (function createSample() {
+      const c = document.createElement('canvas');
+      c.width = 800;
+      c.height = 560;
+      const g = c.getContext('2d');
+
+      g.fillStyle = 'black';
+      g.fillRect(0, 0, c.width, c.height);
+
+      const cx = c.width * 0.48;
+      const cy = c.height * 0.50;
+
+      for (let i = 0; i < 6000; i++) {
+        const t = Math.random() * 10;
+        const ang = t * 1.84 + (Math.random() - 0.5) * 0.32;
+        const r = 10 + t * 18 + (Math.random() - 0.5) * 14;
+        const x = cx + Math.cos(ang) * r;
+        const y = cy + Math.sin(ang) * r * 0.74;
+
+        const alpha = 0.04 + Math.random() * 0.18;
+        const size = 0.4 + Math.random() * 1.6;
+        g.fillStyle = `hsla(${200 + Math.random()*30},80%,${60 + Math.random()*18}%,${alpha})`;
+        g.beginPath();
+        g.arc(x, y, size, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      for (let i = 0; i < 3600; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.pow(Math.random(), 1.8) * 60;
+        const x = cx + Math.cos(a) * r;
+        const y = cy + Math.sin(a) * r * 0.78;
+        const alpha = 0.12 + Math.random() * 0.24;
+        const size = 0.6 + Math.random() * 2.0;
+        g.fillStyle = `rgba(255,228,190,${alpha})`;
+        g.beginPath();
+        g.arc(x, y, size, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      const dataUrl = c.toDataURL();
+      const img = new Image();
+      img.onload = () => {
+        state.width = img.naturalWidth;
+        state.height = img.naturalHeight;
+        state.loaded = true;
+        fileNameBadge.textContent = 'サンプル画像';
+        mainImg.src = dataUrl;
+        fitImage();
+        applyImageFilters();
+        updateTransform();
+        setStatus('サンプル画像を表示中');
+      };
+      img.src = dataUrl;
+    })();
+  </script>
+</body>
+</html>
